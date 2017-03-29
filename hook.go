@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/dimfeld/glog"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/dimfeld/glog"
 )
 
 // Hook is defined in webhook.go.
@@ -21,6 +23,13 @@ var templateFuncs = template.FuncMap{
 			return "<< " + err.Error() + " >>"
 		}
 		return string(result)
+	},
+	"least": func(a interface{}) int {
+		if (reflect.ValueOf(a).Len() - 2) > 0 {
+			return reflect.ValueOf(a).Len() - 2
+		} else {
+			return reflect.ValueOf(a).Len() - 1
+		}
 	},
 }
 

@@ -4,19 +4,26 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/dimfeld/glog"
-	"github.com/dimfeld/httptreemux"
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/dimfeld/glog"
+	"github.com/dimfeld/httptreemux"
 )
 
 type HookHandler func(http.ResponseWriter, *http.Request, map[string]string, *Hook)
 
 func hookHandler(w http.ResponseWriter, r *http.Request, params map[string]string, hook *Hook) {
 	githubEventType := r.Header.Get("X-GitHub-Event")
+
+	// we also try to fetch GitLab events
+	if githubEventType == "" {
+		githubEventType = r.Header.Get("X-Gitlab-Event")
+	}
 
 	if r.ContentLength > 16384 {
 		// We should never get a request this large.
@@ -36,24 +43,42 @@ func hookHandler(w http.ResponseWriter, r *http.Request, params map[string]strin
 	}
 
 	if hook.Secret != "" {
-		secret := r.Header.Get("X-Hub-Signature")
-		if !strings.HasPrefix(secret, "sha1=") {
+		// GitHub
+		if r.Header.Get("X-Hub-Signature") != "" {
+			secret := r.Header.Get("X-Hub-Signature")
+			if !strings.HasPrefix(secret, "sha1=") {
+				glog.Warningf("Request with no valid secret for hook %s from %s\n",
+					r.URL.Path, r.RemoteAddr)
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			hash := hmac.New(sha1.New, []byte(hook.Secret))
+			hash.Write(buffer.Bytes())
+			expected := hash.Sum(nil)
+			seen, err := hex.DecodeString(secret[5:])
+			if err != nil || !hmac.Equal(expected, seen) {
+				glog.Warningf("Request with bad secret for hook %s from %s\nExpected %s, saw %s",
+					r.URL.Path, r.RemoteAddr, hex.EncodeToString(expected), secret)
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			// GitLab
+		} else if r.Header.Get("X-Gitlab-Token") != "" {
+			secret := r.Header.Get("X-Gitlab-Token")
+			if secret != hook.Secret {
+				glog.Warningf("Request with bad secret for hook %s from %s [%s]",
+					r.URL.Path, r.RemoteAddr, secret)
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		} else {
 			glog.Warningf("Request with no secret for hook %s from %s\n",
 				r.URL.Path, r.RemoteAddr)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 
-		hash := hmac.New(sha1.New, []byte(hook.Secret))
-		hash.Write(buffer.Bytes())
-		expected := hash.Sum(nil)
-		seen, err := hex.DecodeString(secret[5:])
-		if err != nil || !hmac.Equal(expected, seen) {
-			glog.Warningf("Request with bad secret for hook %s from %s\nExpected %s, saw %s",
-				r.URL.Path, r.RemoteAddr, hex.EncodeToString(expected), secret)
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
 	}
 
 	event, err := NewEvent(buffer.Bytes(), githubEventType)
@@ -75,7 +100,12 @@ func handlerWrapper(handler HookHandler, hook *Hook) httptreemux.HandlerFunc {
 func SetupServer(config *Config) (net.Listener, http.Handler) {
 	var listener net.Listener = nil
 
-	listener, err := net.Listen("tcp", config.ListenAddress)
+	cer, err := tls.LoadX509KeyPair(config.TlsCertificate, config.TlsKey)
+	if err != nil {
+		glog.Fatalf("Could not load certificates [%s,%s]\n", config.TlsCertificate, config.TlsKey)
+	}
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cer}}
+	listener, err = tls.Listen("tcp", config.ListenAddress, tlsConfig)
 	if err != nil {
 		glog.Fatalf("Could not listen on %s: %s\n", config.ListenAddress, err)
 	}

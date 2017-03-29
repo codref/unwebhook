@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	"github.com/dimfeld/glog"
-	"github.com/dimfeld/goconfig"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"text/template"
+
+	"github.com/BurntSushi/toml"
+	"github.com/dimfeld/glog"
+	"github.com/dimfeld/goconfig"
 )
 
 type Hook struct {
@@ -57,6 +58,12 @@ type Hooks struct {
 
 type Config struct {
 	ListenAddress string
+
+	// Server TLS key
+	TlsKey string
+
+	// Server TLS certificate
+	TlsCertificate string
 
 	LogDir string
 
@@ -162,6 +169,8 @@ func main() {
 
 	config := &Config{
 		ListenAddress:  ":80",
+		TlsKey:         "server.key",
+		TlsCertificate: "server.crt",
 		CommandTimeout: 5,
 	}
 

@@ -5,6 +5,11 @@ Need some custom functionality in response to repository changes, but don't want
 
 This hasn't been used in anything approaching a production environment, but it's pretty simple and light on resources.
 
+## Main differences between the forked and the original project
+* Added TLS support  
+  Certificate and key are mandatory. By default the server looks for server.key and server.crt under the very same directory. This can be configured. See below instructions.
+* Added GitLab authentication token support
+
 ## Usage
 
 The program reads information from a configuration format, described below. Configuration can be sourced from multiple files and directories. 
@@ -40,6 +45,13 @@ The address and port on which to listen. If none is provided, the default `:80` 
 
 ```
 ListenAddress = "127.0.0.1:8080"
+```
+
+#### TlsCertificate and TlsKey
+Filename and path of the certificate with its private key. **This is mandatory**.  
+On linux a self signed certificate can be easily created with a command like the below:
+```
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout server.key -out server.crt
 ```
 
 #### CommandTimeout 
